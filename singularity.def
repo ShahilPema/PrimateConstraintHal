@@ -1,0 +1,103 @@
+Bootstrap: docker
+From: quay.io/comparative-genomics-toolkit/cactus:v2.9.3
+
+%post
+    # Update package manager and install required dependencies
+    apt-get update && apt-get install -y \
+        python3-pip \
+        python3-dev \
+        build-essential \
+        libffi-dev \
+        libssl-dev \
+        libbz2-dev \
+        liblzma-dev \
+        libz-dev \
+        libcurl4-openssl-dev \
+        zlib1g-dev \
+        curl \
+        wget \
+        parallel \
+        g++ \
+        make \
+        software-properties-common \
+        openjdk-11-jdk \
+        libblas-dev \
+        liblapack-dev \
+        libopenblas-dev \
+        tabix \
+        && apt-get clean
+
+    # Install Miniconda
+    mkdir -p /opt/conda
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
+    bash /tmp/miniconda.sh -bup /opt/conda
+    rm -f /tmp/miniconda.sh
+
+    # Initialize conda
+    . /opt/conda/etc/profile.d/conda.sh
+    
+    # Update conda and set solver
+    conda update -yn base conda
+    conda install -yn base conda-libmamba-solver
+    conda config --set solver libmamba
+
+    # Create conda environment for BaseSpace CLI
+    conda create -yn basespace python=3.10
+    conda activate basespace
+
+    # Install required tools and libraries
+    wget -c -P ~/.local/bin "http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/axtChain"
+    wget -c -P ~/.local/bin "http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/faToTwoBit"
+    wget -c -P ~/.local/bin "http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/pslPosTarget"
+    chmod +x ~/.local/bin/axtChain ~/.local/bin/faToTwoBit ~/.local/bin/pslPosTarget
+
+    # Install BaseSpace CLI
+    curl -sL https://launch.basespace.illumina.com/CLI/latest/amd64-linux/bs -o /opt/conda/envs/basespace/bin/bs
+    chmod +x /opt/conda/envs/basespace/bin/bs
+
+    # Install required Python packages
+    pip3 install --no-cache-dir \
+        --root-user-action=ignore \
+        aria2 \
+        joblib \
+        hail \
+        notebook \
+        polars \
+        pyfaidx \
+        pandas \
+        pyarrow \
+        fastparquet \
+        Levenshtein \
+        matplotlib
+
+    # Clean up
+    apt-get remove -y --purge build-essential libffi-dev libssl-dev python3-dev
+    apt-get autoremove -y && apt-get clean
+    rm -rf /var/lib/apt/lists/*
+    rm -f /tmp/* 2>/dev/null || true
+    rm -f /var/tmp/* 2>/dev/null || true
+
+%environment
+    # Set up environment variables
+    export PATH=/opt/conda/envs/basespace/bin:/opt/conda/bin:$PATH
+    export PYTHONPATH=/usr/local/lib/python3.10/dist-packages:$PYTHONPATH
+    # Add conda initialization
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate basespace
+
+%runscript
+    exec "$@"
+
+%labels
+    Author YourName
+    Version 1.0
+    Description "Cactus Singularity image with BaseSpace CLI and Python packages"
+
+%help
+    This Singularity image is based on the Cactus container and includes:
+    - Miniconda with BaseSpace CLI environment
+    - Required Python libraries and dependencies
+    - BaseSpace CLI tool pre-installed
+    
+    To use BaseSpace CLI, first authenticate with: bs auth
+

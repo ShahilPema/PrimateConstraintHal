@@ -1,0 +1,31 @@
+Bootstrap: docker
+From: quay.io/comparative-genomics-toolkit/cactus:v2.9.1
+
+%post
+    # Update and install dependencies
+    apt-get update && apt-get install -y \
+        python3-pip \
+        python3-dev \
+        build-essential \
+        wget \
+        && apt-get clean
+    
+    # Install Python packages
+    pip3 install --no-cache-dir polars joblib pyarrow pysam
+
+    # Verify installations
+    echo "Verifying installations..."
+    cactus --version
+    python3 -c "import polars; print('Polars version:', polars.__version__)"
+    python3 -c "import joblib; print('Joblib version:', joblib.__version__)"
+
+%environment
+    export PATH=/usr/local/bin:$PATH
+
+%labels
+    Version v2.9.1
+    Description "Singularity image for Cactus with Polars and Joblib"
+
+%runscript
+    exec "$@"
+
