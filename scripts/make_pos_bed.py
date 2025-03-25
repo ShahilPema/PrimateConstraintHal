@@ -4,7 +4,9 @@ import polars as pl
 import argparse
 import os
 
+
 def process_bed_file(input_file, outdir):
+
     # Read the BED file
     bed_data = pl.read_csv(input_file, separator='\t')
 
@@ -39,6 +41,7 @@ def process_bed_file(input_file, outdir):
     print(f"Processed data saved to {output_file}")
 
 def main():
+
     # Argument parser for input file
     parser = argparse.ArgumentParser(description="Process a BED file and generate a Parquet file by positions.")
     parser.add_argument("input_file", help="Path to the input BED file")
@@ -51,4 +54,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

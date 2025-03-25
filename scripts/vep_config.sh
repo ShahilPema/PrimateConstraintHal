@@ -28,4 +28,3 @@ cat << 'EOF' > $output_file
 EOF
 
 echo "JSON configuration file '$output_file' has been created."
-

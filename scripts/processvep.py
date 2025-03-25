@@ -4,30 +4,28 @@ import argparse
 import os
 import shutil
 
-cpus = psutil.cpu_count(logical=True)
-
-memory = int(psutil.virtual_memory().total/(1024 ** 3)*0.85)
-
-config = {
-    'spark.driver.memory': f'{memory}g',  #Set to total memory
-    'spark.executor.memory': f'{memory}g'
-}
-
-hl.init(spark_conf=config, master=f'local[{cpus}]')
-
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Process a VCF file with Hail.")
 parser.add_argument("--vep_ht", required=True, help="Path to vep.ht.")
+parser.add_argument("--memory", required=True, help="Memory available for this task.")
+parser.add_argument("--cpus", required=True, help="Cpus available for this task.")
 parser.add_argument("--output", required=True, help="Output directory")
+parser.add_argument("--tmpdir", required=True, help="Local temp dir")
 args = parser.parse_args()
+
+config = {
+    'spark.driver.memory': f'{args.memory}g',  #Set to total memory
+    'spark.executor.memory': f'{args.memory}g',  #Set to total memory
+    'spark.local.dir': args.tmpdir,
+}
+
+hl.init(spark_conf=config, master=f'local[{args.cpus}]', tmp_dir=args.tmpdir, local_tmpdir=args.tmpdir)
 
 vep = hl.read_table(args.vep_ht)
 
-vep = vep.repartition(cpus * 8)
+vep = vep.repartition(int(args.cpus) * 4)
 
 vep = vep.checkpoint('A.ht', overwrite=True)
-
-vep = hl.read_table('A.ht')
 
 vep = vep.annotate(
     regions = vep.region.split(',')
@@ -36,8 +34,8 @@ vep = vep.annotate(
 vep = vep.explode('regions')
 
 vep = vep.annotate(
-    transcript = vep.regions.split('_')[0],
-    region_type = vep.regions.split('_')[1],
+    transcript = vep.regions.split('-')[0],
+    region_type = vep.regions.split('-')[1],
     hg38_chr = vep.locus.contig,
     hg38_position = vep.locus.position
 ).drop('regions')
@@ -48,7 +46,7 @@ vep = vep.annotate(
         vep.vep.transcript_consequences.filter(
            lambda x: x.transcript_id == vep.transcript
         ),
-        hl.missing('array<struct{allele_num: int32, cdna_end: int32, cdna_start: int32, gene_id: str, protein_end: int32, protein_start: int32, variant_allele: str, codons: str, consequence_terms: array<str>, strand: int32, transcript_id: str, impact: str, cds_start: int32, cds_end: int32, amino_acids: str, flags: array<str>, distance: int32, lof: str, lof_flags: str, lof_filter: str, lof_info: str, SpliceRegion: array<str>}>')
+        hl.missing(vep.vep.transcript_consequences.dtype)
     )
 )
 #NOTE:SpliceRegion: array<str> may need to be replaced with spliceregion: array<str>, tssdistance: int32
@@ -60,7 +58,6 @@ vep = vep.annotate(
     amino_acid = vep.filtered_consequences.amino_acids.first()
 )
 
-#{0: 2904693, 1: 404697456, None: 60666}
 vep = vep.select('hg38_chr', 'hg38_position', 'codons', 'transcript', 'region_type', 'strand', 'protein_start', 'amino_acid')
 
 vep = vep.annotate(
@@ -156,7 +153,3 @@ vep.write(f'{args.output}/vep_cdsinfo.ht', overwrite=True)
 for file in ['A.ht', 'B.ht', 'C.ht', 'D.ht', 'E.ht']:
     if os.path.exists(file):
         shutil.rmtree(file)
-
-##NOTE
-##A few thousand positions are missing in the vep_annotated parquet because the mane select transcript was not included in the output. This behavior is replicated
-##in the online VEP version. 

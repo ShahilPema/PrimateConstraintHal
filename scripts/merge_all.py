@@ -15,8 +15,9 @@ parser.add_argument("--mapping", required=True, help="233primates_s1.csv")
 args = parser.parse_args()
 
 #NOTE change cpus so each partition is more than 128MB. 
+available_cpus = os.cpu_count()
+hl_cpus = min(192, max(1, available_cpus - 2))  # Use up to 32 CPUs, leave 2 for system
 
-hl_cpus = 32
 
 forks = 1
 
@@ -27,7 +28,7 @@ config = {
     'spark.executor.memory': f'{memory}g'  #Set to total memory
 }
 
-hl.init(spark_conf=config, master=f'local[32]')
+hl.init(spark_conf=config, master=f'local[{hl_cpus}]')
 
 id_info = hl.import_table(args.mapping, delimiter=',')
 id_info = id_info.rename({'\ufeffID': 'ID'})
@@ -61,14 +62,15 @@ order_dict = hl.dict(hl.zip(id_info.ID.collect(),
 
 human_rg = hl.ReferenceGenome.from_fasta_file(
     name='Homo_sapiens',
-    fasta_file='Homo_sapiens.fa',
-    index_file='Homo_sapiens.fa.fai'
+    fasta_file=args.human_fa,
+    index_file=args.human_faidx
 )
 
-
+if not os.path.exists('./tmp'):
+    os.makedirs('./tmp')
+    
 
 all_positions = hl.read_table(args.vep)
-all_positions = all_positions.filter(all_positions.locus.contig == 'chr21')
 all_positions = all_positions.select('regions')
 all_positions = all_positions.key_by()
 all_positions = all_positions.annotate(
@@ -99,7 +101,7 @@ for file in var_level_files:
             counts=hl.if_else(
                 hl.is_defined(ht.alleles),
                 hl.struct(
-                    AC=hl.sum([ht[col].n_alt_alleles() for col in tcall_columns]),
+                    AC=hl.sum([ht[col].is_hom_var() for col in tcall_columns]) * 2 + hl.sum([ht[col].is_het() for col in tcall_columns]),
                     AN=hl.sum([hl.is_defined(ht[col]) for col in tcall_columns]) * 2,
                     HZ=hl.sum([ht[col].is_hom_var() for col in tcall_columns]),
                     HET=hl.sum([ht[col].is_het() for col in tcall_columns]),
@@ -152,17 +154,11 @@ for species in species_list:
     
     all_positions = all_positions.checkpoint(f'./tmp/{species}_data_2.ht', overwrite=True)
 
-all_positions = all_positions.key_by('locus')
-
 all_positions = all_positions.checkpoint('./tmp/checkpoint1.ht', overwrite=True)
 
 for species in species_list:
 
     ht = hl.read_table(f'./tmp/{species}_data.ht')
-
-    ht = ht.filter(hl.is_defined(ht[f'{species}_data'].species_locus) & hl.is_missing(ht[f'{species}_data'].species_alleles))
-
-    ht = ht.key_by('locus')
 
     all_positions = all_positions.annotate(
         species = hl.if_else(
@@ -195,7 +191,7 @@ for species in species_list:
             transcript_mappings = hl.if_else(
                 hl.is_missing(all_positions.species.transcript_mappings),
                 hl.missing('set<struct{transcript: str, region_type: str, strand: int32, codon_match: int32, aa_match: int32, codon_mismatch_cons: str, human_alt_cons: str, species_alt_cons: str, alt_cons_match: int32, annotation: str}>'),
-                all_positions.Aotus_nancymaae_data.transcript_mappings.map(
+                all_positions[f'{species}_data'].transcript_mappings.map(
                     lambda x: x.annotate(annotation=x.transcript + '_' + x.region_type)
                 )
             )
@@ -211,7 +207,6 @@ for species in species_list:
     all_positions = all_positions.checkpoint(f'./tmp/{species}_data_2.ht', overwrite=True)
 
 
-all_positions = hl.read_table('./tmp/Sapajus_apella_data_2.ht')
 species_list = list(species_count_dict.keys())
 
 species_count_dict = hl.literal(species_count_dict)
@@ -225,87 +220,6 @@ all_positions = all_positions.annotate(
     ]),
     species_alleles_defined=hl.sum([
         hl.is_defined(all_positions[f'{species}_data'].species_alleles) for species in species_list
-    ])
-)
-
-all_positions = all_positions.annotate(
-    sumAC=hl.sum([
-        hl.or_else(all_positions[f'{species}_data'].counts.AC, 0) for species in species_list
-    ]),
-    sumAN=hl.sum([
-        hl.or_else(all_positions[f'{species}_data'].counts.AN, 0) for species in species_list
-    ]),
-    sumHZ=hl.sum([
-        hl.or_else(all_positions[f'{species}_data'].counts.HZ, 0) for species in species_list
-    ]),
-    sumHET=hl.sum([  # Add total heterozygote count
-        hl.or_else(all_positions[f'{species}_data'].counts.HET, 0) for species in species_list
-    ]),
-    samples = hl.flatten([
-        hl.or_else(all_positions[f'{species}_data'].counts.samples, hl.empty_array(hl.tstr)) for species in species_list
-    ]),
-    # Add flattened lists of heterozygous and homozygous samples
-    het_samples = hl.flatten([
-        hl.or_else(all_positions[f'{species}_data'].counts.het_samples, hl.empty_array(hl.tstr)) for species in species_list
-    ]),
-    hom_samples = hl.flatten([
-        hl.or_else(all_positions[f'{species}_data'].counts.hom_samples, hl.empty_array(hl.tstr)) for species in species_list
-    ]),
-    sumAC_ref_match=hl.sum([
-        hl.if_else(
-            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 1),
-            hl.or_else(all_positions[f'{species}_data'].counts.AC, 0),
-            0
-        ) for species in species_list
-    ]),
-    sumAN_ref_match=hl.sum([
-        hl.if_else(
-            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 1),
-            hl.or_else(all_positions[f'{species}_data'].counts.AN, 0),
-            0
-        ) for species in species_list
-    ]),
-    sumHZ_ref_match=hl.sum([
-        hl.if_else(
-            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 1),
-            hl.or_else(all_positions[f'{species}_data'].counts.HZ, 0),
-            0
-        ) for species in species_list
-    ]),
-    sumHET_ref_match=hl.sum([
-        hl.if_else(
-            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 1),
-            hl.or_else(all_positions[f'{species}_data'].counts.HET, 0),
-            0
-        ) for species in species_list
-    ]),
-    sumAC_ref_mismatch=hl.sum([
-        hl.if_else(
-            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 0),
-            hl.or_else(all_positions[f'{species}_data'].counts.AC, 0),
-            0
-        ) for species in species_list
-    ]),
-    sumAN_ref_mismatch=hl.sum([
-        hl.if_else(
-            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 0),
-            hl.or_else(all_positions[f'{species}_data'].counts.AN, 0),
-            0
-        ) for species in species_list
-    ]),
-    sumHZ_ref_mismatch=hl.sum([
-        hl.if_else(
-            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 0),
-            hl.or_else(all_positions[f'{species}_data'].counts.HZ, 0),
-            0
-        ) for species in species_list
-    ]),
-    sumHET_ref_mismatch=hl.sum([
-        hl.if_else(
-            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 0),
-            hl.or_else(all_positions[f'{species}_data'].counts.HET, 0),
-            0
-        ) for species in species_list
     ])
 )
 
@@ -389,7 +303,7 @@ all_positions = all_positions.annotate(
     transcript_mappings=hl.array(all_positions.groups.map(calculate_struct))
 )
 
-all_positions = all_positions.drop('combined', 'groups', *[f"{species}_data" for species in species_list])
+all_positions = all_positions.drop('combined', 'groups')
 
 all_positions.checkpoint('./tmp/aggregated_primate_counts.ht', overwrite=True)
 
@@ -419,37 +333,119 @@ all_positions = all_positions.annotate(
     **{
         f'sum_{field}': hl.sum([
             hl.or_else(all_positions[f'{species}_pos_info'][field], 0) for species in species_list
-        ])
+            ])
         for field in ['ref_match']
     },
     **{
-        f'mean_{field}': (
-            hl.sum([
-                hl.or_else(all_positions[f'{species}_pos_info'][field], 0) for species in species_list
-            ]) / 
-            hl.sum([
-                hl.if_else(hl.is_defined(all_positions[f'{species}_pos_info'][field]), 1, 0) for species in species_list
+        f'mean_{field}':
+            hl.mean([
+                hl.or_else(all_positions[f'{species}_pos_info'][field], hl.missing(hl.tint32)) for species in species_list
             ])
-        )
         for field in ['min_hamming', 'pentamer_error']
     },
     **{
-        f'weighted_mean_{field}': (
-            hl.sum([
-                hl.or_else(all_positions[f'{species}_pos_info'][field], 0) * species_count_dict[species]
+        f'weighted_mean_{field}':
+            hl.mean([
+                hl.or_else(all_positions[f'{species}_pos_info'][field] * species_count_dict[species], hl.missing(hl.tint32)) 
                 for species in species_list
-            ]) / 
-            hl.sum([
-                hl.if_else(hl.is_defined(all_positions[f'{species}_pos_info'][field]), species_count_dict[species], 0) for species in species_list
             ])
-        )
         for field in ['min_hamming', 'pentamer_error']
     }
 )
 
-all_positions = all_positions.drop(*[f'{species}_pos_info' for species in species_list] + ['samples'])
+all_positions = all_positions.annotate(
+    sumAC=hl.sum([
+        hl.or_else(all_positions[f'{species}_data'].counts.AC, 0) for species in species_list
+    ]),
+    sumAN=hl.sum([
+        hl.or_else(all_positions[f'{species}_data'].counts.AN, 0) for species in species_list
+    ]),
+    sumHZ=hl.sum([
+        hl.or_else(all_positions[f'{species}_data'].counts.HZ, 0) for species in species_list
+    ]),
+    sumHET=hl.sum([  # Add total heterozygote count
+        hl.or_else(all_positions[f'{species}_data'].counts.HET, 0) for species in species_list
+    ]),
+    samples = hl.flatten([
+        hl.or_else(all_positions[f'{species}_data'].counts.samples, hl.empty_array(hl.tstr)) for species in species_list
+    ]),
+    # Add flattened lists of heterozygous and homozygous samples
+    het_samples = hl.flatten([
+        hl.or_else(all_positions[f'{species}_data'].counts.het_samples, hl.empty_array(hl.tstr)) for species in species_list
+    ]),
+    hom_samples = hl.flatten([
+        hl.or_else(all_positions[f'{species}_data'].counts.hom_samples, hl.empty_array(hl.tstr)) for species in species_list
+    ]),
+    sumAC_ref_match=hl.sum([
+        hl.if_else(
+            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 1),
+            hl.or_else(all_positions[f'{species}_data'].counts.AC, 0),
+            0
+        ) for species in species_list
+    ]),
+    sumAN_ref_match=hl.sum([
+        hl.if_else(
+            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 1),
+            hl.or_else(all_positions[f'{species}_data'].counts.AN, 0),
+            0
+        ) for species in species_list
+    ]),
+    sumHZ_ref_match=hl.sum([
+        hl.if_else(
+            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 1),
+            hl.or_else(all_positions[f'{species}_data'].counts.HZ, 0),
+            0
+        ) for species in species_list
+    ]),
+    sumHET_ref_match=hl.sum([
+        hl.if_else(
+            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 1),
+            hl.or_else(all_positions[f'{species}_data'].counts.HET, 0),
+            0
+        ) for species in species_list
+    ]),
+    sumAC_ref_mismatch=hl.sum([
+        hl.if_else(
+            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 0),
+            hl.or_else(all_positions[f'{species}_data'].counts.AC, 0),
+            0
+        ) for species in species_list
+    ]),
+    sumAN_ref_mismatch=hl.sum([
+        hl.if_else(
+            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 0),
+            hl.or_else(all_positions[f'{species}_data'].counts.AN, 0),
+            0
+        ) for species in species_list
+    ]),
+    sumHZ_ref_mismatch=hl.sum([
+        hl.if_else(
+            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 0),
+            hl.or_else(all_positions[f'{species}_data'].counts.HZ, 0),
+            0
+        ) for species in species_list
+    ]),
+    sumHET_ref_mismatch=hl.sum([
+        hl.if_else(
+            hl.is_defined(all_positions[f'{species}_pos_info']) & (all_positions[f'{species}_pos_info'].ref_match == 0),
+            hl.or_else(all_positions[f'{species}_data'].counts.HET, 0),
+            0
+        ) for species in species_list
+    ]),
+    pentamers=hl.struct(
+        **{
+            f'{species}_pentamer': hl.if_else(
+                hl.is_defined(all_positions[f'{species}_pos_info']),
+                all_positions[f'{species}_pos_info'].species_pentamer,
+                hl.missing(hl.tstr)
+            ) for species in species_list
+        }
+    )
+)
+
+all_positions = all_positions.drop(*[f'{species}_pos_info' for species in species_list] + ['samples'] + [f"{species}_data" for species in species_list])
 
 # Step 5: Save the updated table
 all_positions.write('aggregated_primate_counts_with_position_info.ht', overwrite=True)
 
-shutil.rmtree('tmp')
+shutil.rmtree('./tmp')

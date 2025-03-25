@@ -57,18 +57,10 @@ if ! halLiftover "$hal_file" "$species" "${output_dir}/${bed_basename}_species_l
 fi
 
 # Step 5: Add a 5th column to the human lifted BED file with human coordinates
-awk 'BEGIN {OFS="\t"} {print $0, $1":"$3}' "${output_dir}/${bed_basename}_human_lifted.bed" > "${output_dir}/${bed_basename}_human_lifted_annotated.bed"
-
-# Step 6: Remove duplicates using awk
-awk 'NR==FNR {count[$4]++; next} count[$4]==1' "${output_dir}/${bed_basename}_human_lifted_annotated.bed" "${output_dir}/${bed_basename}_human_lifted_annotated.bed" > "${output_dir}/${bed_basename}_deduplicated.bed"
-
-# Step 7: Extract the first three columns and the fifth column
-awk 'BEGIN {OFS="\t"} {print $1, $2, $3, $5}' "${output_dir}/${bed_basename}_deduplicated.bed" > "${output_dir}/${bed_basename}_final.bed"
+awk 'BEGIN {OFS="\t"} {print $4, $5, $1":"$3}' "${output_dir}/${bed_basename}_human_lifted.bed" > "${output_dir}/${bed_basename}_final.bed"
 
 # Cleanup intermediate files
-#rm -f "${output_dir}/${bed_basename}_annotated.bed" \
-#      "${output_dir}/${bed_basename}_species_lifted.bed" \
-#      "${output_dir}/${bed_basename}_species_lifted_annotated.bed" \
-#      "${output_dir}/${bed_basename}_human_lifted.bed" \
-#      "${output_dir}/${bed_basename}_human_lifted_annotated.bed" \
-#      "${output_dir}/${bed_basename}_deduplicated.bed"
+rm -f "${output_dir}/${bed_basename}_annotated.bed" \
+     "${output_dir}/${bed_basename}_species_lifted.bed" \
+     "${output_dir}/${bed_basename}_species_lifted_annotated.bed" \
+     "${output_dir}/${bed_basename}_human_lifted.bed"

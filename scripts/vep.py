@@ -51,14 +51,15 @@ bed_ht = bed_ht.key_by(bed_ht.locus, bed_ht.alleles)
 
 bed_ht = bed_ht.select(
     hg38_chr = bed_ht.hg38_chr,
-    hg38_position = bed_ht.hg38_position,
+    hg38_position = hl.int32(bed_ht.hg38_position),
     REF = bed_ht.ref,
     ALT = bed_ht.possible_alts,
     region = bed_ht.region
 )
 
+bed_ht = bed_ht.checkpoint(f'{args.output}/vep_cpt.ht', overwrite=True)
 bed_ht = hl.vep(bed_ht, args.vep_config)
-bed_ht.checkpoint(f'{args.output}/vep.ht', overwrite=True)
+bed_ht.write(f'{args.output}/vep.ht', overwrite=True)
 
 ##NOTE
 ##Some positions are missing in the vep_annotated parquet because the mane select transcript was not included in the output. This behavior is replicated

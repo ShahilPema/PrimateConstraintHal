@@ -19,20 +19,15 @@ def main():
     parser.add_argument("--hal_format", required=True, help="HAL contig format (e.g., 'refseq').")
     parser.add_argument("--primate_fasta_path", required=True, help="Path to the FASTA file for the primate genome.")
     parser.add_argument("--primate_index_path", required=True, help="Path to the FASTA index file (.fai).")
-    parser.add_argument("--cpus", required=True, help="Total cpus on machine")
     parser.add_argument("--output", required=True, help="Output directory")
     args = parser.parse_args()
 
     # Resource configuration
-    hl_cpus = 16
-    forks = math.floor(int(args.cpus)/hl_cpus)
-    memory = int(psutil.virtual_memory().total / (1024 ** 3) * 0.9 / forks)
-    print(memory)
     config = {
-        'spark.driver.memory': f'{memory}g',
+        'spark.driver.memory': '60g',
     }
     
-    hl.init(spark_conf=config, master=f'local[{hl_cpus}]')
+    hl.init(spark_conf=config, master='local[12]')
 
     # Load alias file and create mapping
     if args.vcf_format != args.hal_format:
@@ -90,7 +85,7 @@ def main():
         return mt
 
     basename = os.path.basename(args.vcf_file).split('.')[0]
-    mt = process_vcf(args.vcf_file, args.species, mapping_dict, hl_cpus)
+    mt = process_vcf(args.vcf_file, args.species, mapping_dict, 16)
     mt.write(f'{args.output}/{basename}.mt', overwrite=True)
 
 if __name__ == "__main__":
