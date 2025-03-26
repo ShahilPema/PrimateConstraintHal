@@ -25,17 +25,18 @@ From: quay.io/comparative-genomics-toolkit/cactus:v2.9.3
         liblapack-dev \
         libopenblas-dev \
         tabix \
+        jq \
         && apt-get clean
 
     # Install Miniconda
     mkdir -p /opt/conda
     wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
-    bash /tmp/miniconda.sh -bup /opt/conda
+    bash /tmp/miniconda.sh -b -u -p /opt/conda
     rm -f /tmp/miniconda.sh
 
     # Initialize conda
     . /opt/conda/etc/profile.d/conda.sh
-    
+
     # Update conda and set solver
     conda update -yn base conda
     conda install -yn base conda-libmamba-solver
@@ -45,15 +46,16 @@ From: quay.io/comparative-genomics-toolkit/cactus:v2.9.3
     conda create -yn basespace python=3.10
     conda activate basespace
 
-    # Install required tools and libraries
-    wget -c -P ~/.local/bin "http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/axtChain"
-    wget -c -P ~/.local/bin "http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/faToTwoBit"
-    wget -c -P ~/.local/bin "http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/pslPosTarget"
-    chmod +x ~/.local/bin/axtChain ~/.local/bin/faToTwoBit ~/.local/bin/pslPosTarget
-
     # Install BaseSpace CLI
     curl -sL https://launch.basespace.illumina.com/CLI/latest/amd64-linux/bs -o /opt/conda/envs/basespace/bin/bs
     chmod +x /opt/conda/envs/basespace/bin/bs
+
+    # Install BEDOPS
+    wget -c -P /tmp "https://github.com/bedops/bedops/releases/download/v2.4.41/bedops_linux_x86_64-v2.4.41.tar.bz2"
+    tar -xjf /tmp/bedops_linux_x86_64-v2.4.41.tar.bz2 -C /tmp
+    mv /tmp/bin/bedops-typical /bin/bedops
+    rm -rf /tmp/bin
+    rm -f /tmp/bedops_linux_x86_64-v2.4.41.tar.bz2
 
     # Install required Python packages
     pip3 install --no-cache-dir \
@@ -70,7 +72,7 @@ From: quay.io/comparative-genomics-toolkit/cactus:v2.9.3
         Levenshtein \
         matplotlib
 
-    # Clean up
+    # Clean up unnecessary packages and temp files
     apt-get remove -y --purge build-essential libffi-dev libssl-dev python3-dev
     apt-get autoremove -y && apt-get clean
     rm -rf /var/lib/apt/lists/*
@@ -91,13 +93,4 @@ From: quay.io/comparative-genomics-toolkit/cactus:v2.9.3
 %labels
     Author YourName
     Version 1.0
-    Description "Cactus Singularity image with BaseSpace CLI and Python packages"
-
-%help
-    This Singularity image is based on the Cactus container and includes:
-    - Miniconda with BaseSpace CLI environment
-    - Required Python libraries and dependencies
-    - BaseSpace CLI tool pre-installed
-    
-    To use BaseSpace CLI, first authenticate with: bs auth
-
+    Description "Cactus Singularity image with BaseSpace CLI, BEDOPS, and Python packages"
