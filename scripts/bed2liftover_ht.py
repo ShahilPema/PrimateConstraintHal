@@ -25,8 +25,8 @@ args = parser.parse_args()
 #The resulting tables now include all positions that a given human position maps to in the target species.
 
 config = {
-    'spark.driver.memory': f'{args.memory}g',  #Set to total memory
-    'spark.executor.memory': f'{args.memory}g',
+    'spark.driver.memory': f'{args.memory}',  #Set to total memory
+    'spark.executor.memory': f'{args.memory}',
     'spark.local.dir': args.tmpdir,
 }
 
@@ -44,10 +44,11 @@ species_rg = hl.ReferenceGenome.from_fasta_file(
     index_file=args.species_index_path
 )
 
-lifttable = hl.import_table(args.species_bed_path, no_header=True)
+files = args.species_bed_path.split(' ')
 
-files = len(glob.glob(args.species_bed_path))
-partitions = max(math.floor(files/25), int(args.cpus)*2) #increase file size to 128MB but make sure each cpu has a partition
+lifttable = hl.import_table(files, no_header=True)
+
+partitions = max(math.floor(len(files)/25), int(args.cpus)*2) #increase file size to 128MB but make sure each cpu has a partition
 lifttable = lifttable.naive_coalesce(partitions)
 
 lifttable = lifttable.annotate(
@@ -83,7 +84,7 @@ lifttable = lifttable.explode('species_mappings')
 vep = hl.read_table(args.vep_annotations)
 
 overlap = vep.group_by('hg38_chr', 'hg38_position').aggregate(
-    overlapping_annotations = hl.agg.count()
+    overlapping_annotations = hl.int32(hl.agg.count())
 )
 
 overlap = overlap.checkpoint('cpt1_2.ht', overwrite=True)
@@ -201,6 +202,7 @@ pos_table = lifttable.annotate(
            hg38_pentamer = lifttable.hg38_pentamer,
            pentamer_error = lifttable.pentamer_error,
            reciprocal_mapping = lifttable.reciprocal_mapping,
+           human2species_mappings = lifttable.human2species_mappings,
            overlapping_annotations = lifttable.overlapping_annotations
        )
 ).rename(

@@ -19,26 +19,6 @@ log.info """\
          .stripIndent()
 
 // ===================================
-// System resource detection
-// ===================================
-
-process getSystemCpus {
-    cache false
-    executor 'local'
-    
-    output:
-    env SYSTEM_CPUS, emit: cpus
-
-    script:
-    """
-    SYSTEM_CPUS=\$(nproc)
-    if [ \$SYSTEM_CPUS -gt ${params.max_cpus} ]; then
-        SYSTEM_CPUS=${params.max_cpus}
-    fi
-    """
-}
-
-// ===================================
 // Data preparation processes
 // ===================================
 
@@ -361,14 +341,18 @@ process ANNOTATE_VEP {
     maxRetries 2
 
     input:
-    tuple val(cpus), path(position_table_path), path(human_fasta_path), path(human_index_path), path(vep_config)
+    tuple path(position_table_path), path(human_fasta_path), path(human_index_path), path(vep_config)
 
     output:
     path("vep.ht"), emit: vep
 
     script:
     """
-    python3 ${params.scriptsDir}/vep.py --cpus "${cpus}" \
+    local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX) 
+    memory=\$(echo "${task.memory}" | sed 's/ GB/g/')
+    python3 ${params.scriptsDir}/vep.py --cpus "${task.cpus}" \
+                                        --memory "\${memory}" \
+                                        --tmpdir "\$local_tmp" \
                                         --position_table "${position_table_path}" \
                                         --human_fasta_path "${human_fasta_path}" \
                                         --human_index_path "${human_index_path}" \
@@ -392,10 +376,13 @@ process PROCESS_VEP {
 
     script:
     """
+    local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX)
+    memory=\$(echo "${task.memory}" | sed 's/ GB/g/')
     python3 ${params.scriptsDir}/processvep.py \
         --vep_ht "${vep_ht}" \
         --cpus "${task.cpus}" \
-        --memory "${task.memory}" \
+        --memory "\${memory}" \
+        --tmpdir "\$local_tmp" \
         --output .
     """
 }
@@ -416,17 +403,17 @@ process MAKE_LIFTOVER_BED {
     tuple val(species), path(hal_file), path(bed_files)
 
     output:
-    tuple val(species), path("*_final.bed"), emit: lifttable
+    tuple val(species), path("*_final.bed"), emit: lifted_beds
 
     script:
     """
     local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX)
-    parallel --tmpdir "\$local_tmp" -j \$((${task.cpus} - 10)) bash ${params.scriptsDir}/liftover_bed.sh {} $species $hal_file -o *_final.bed ::: $bed_files
+    parallel --tmpdir "\$local_tmp" -j \$((${task.cpus} - 10)) bash ${params.scriptsDir}/liftover_bed.sh {} $species $hal_file -o . ::: $bed_files
     """
 }
 
 process MAKE_LIFTOVER_TABLE {
-    storeDir "${projectDir}/lift_beds/${species}"
+    storeDir "${projectDir}/liftover/${species}"
     executor 'local'
     maxForks 1
     cpus { params.max_cpus }
@@ -435,7 +422,7 @@ process MAKE_LIFTOVER_TABLE {
     maxRetries 0
 
     input:
-    tuple val(species), path(species_fasta_path), path(species_index_path), path(human_fasta_path), path(human_index_path), path(species_bed_path),  path(vep_path), val(all_cpus)
+    tuple val(species), path(species_fasta_path), path(species_index_path), path(human_fasta_path), path(human_index_path), path(species_bed_path),  path(vep_path)
 
     output:
     tuple val(species), path("${species}_pos_info.ht"), path("${species}_var_info.ht"), emit: lifttable
@@ -443,6 +430,7 @@ process MAKE_LIFTOVER_TABLE {
     script:
     """
     local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX) 
+    memory=\$(echo "${task.memory}" | sed 's/ GB/g/')
     python3 ${params.scriptsDir}/bed2liftover_ht.py \
         --species "$species" \
         --human_fasta_path "$human_fasta_path" \
@@ -452,7 +440,7 @@ process MAKE_LIFTOVER_TABLE {
         --species_bed_path "$species_bed_path" \
         --vep_annotations "$vep_path" \
         --cpus "${task.cpus}" \
-        --memory "${task.memory}" \
+        --memory "\${memory}" \
         --tmpdir "\$local_tmp" \
         --output "\${PWD}" 
     """ 
@@ -463,15 +451,15 @@ process MAKE_LIFTOVER_TABLE {
 // ===================================
 
 process MERGEMTS {
-    storeDir "${projectDir}/lift_tables/${species}"
+    storeDir "${projectDir}/liftover/${species}"
     maxForks 5  // Increased from 1
     cpus { Math.min(40, params.max_cpus) }  // Limit to 40 cores per instance
-    memory { '500 GB' }  // Explicit allocation
+    memory { '50 GB' }  
     time { params.max_time }
     maxRetries 2
 
     input:
-    tuple val(species), path(mts), path(lifttable), val(contig_count), val(all_cpus)
+    tuple val(species), path(mts), path(pos_ht), path(lifttable), val(contig_count), path(sample_mapping)
 
     output:
     tuple val(species), path("${species}_lifted_vars.ht"), path("${species}_colinfo_vars.ht"), emit: speciesht
@@ -479,19 +467,23 @@ process MERGEMTS {
     script:
     """
     local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX) 
+    memory=\$(echo "${task.memory}" | sed 's/ GB/g/')
     python3 ${params.scriptsDir}/liftvars.py \
         --species "$species" \
         --sample_mts "$mts" \
-        --full_ht "$lifttable" \
+        --species_ht "$lifttable" \
+        --pos_ht "$pos_ht" \
         --contig_count "$contig_count" \
+        --mapping "$sample_mapping" \
         --cpus "${task.cpus}" \
-        --memory "${task.memory}" \
+        --memory "\${memory}" \
         --tmpdir "\$local_tmp" \
-        --outdir "\${data_dir}"
+        --outdir "\${PWD}"
     """
 }
 
 process MERGE_SPECIES_HTS {
+    storeDir "${projectDir}/merged_vars"
     maxForks 1
     cpus { params.max_cpus }
     memory { params.max_memory }
@@ -499,7 +491,7 @@ process MERGE_SPECIES_HTS {
     maxRetries 2
 
     input:
-    tuple path(vep), path(mapping), path(human_fa), path(human_faidx), path(var_hts), path(pos_hts)
+    tuple path(vep), path(human_fa), path(human_faidx), path(var_hts)
 
     output:
     path("aggregated_primate_counts_with_position_info.ht"), emit: all_species
@@ -507,17 +499,16 @@ process MERGE_SPECIES_HTS {
     script:
     """
     local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX) 
+    memory=\$(echo "${task.memory}" | sed 's/ GB/g/')
     python3 ${params.scriptsDir}/merge_all.py \
         --vep "$vep" \
-        --mapping "$mapping" \
         --human_fa "$human_fa" \
         --human_faidx "$human_faidx" \
         --var_hts "$var_hts" \
-        --pos_hts "$pos_hts" \
         --cpus "${task.cpus}" \
-        --memory "${task.memory}" \
+        --memory "\${memory}" \
         --tmpdir "\$local_tmp" \
-        --outdir "\${data_dir}"
+        --outdir "\${PWD}"
     """
 }
 
@@ -527,8 +518,6 @@ process MERGE_SPECIES_HTS {
 
 workflow {
     CHECK_BASESPACE_AUTH()
-
-    getSystemCpus()
     
     // Data preparation
     PREP_FILES_BED()
@@ -597,7 +586,7 @@ workflow {
         .set { sp_hal_hg38beds_ch }
     
     // Process liftover and references
-    //MAKE_LIFTOVER_BED(sp_hal_hg38beds_ch)
+    MAKE_LIFTOVER_BED(sp_hal_hg38beds_ch)
     GET_REFERENCE(sp_hal_ch)
     GET_REFERENCE_HUMAN(hal)
     
@@ -616,7 +605,6 @@ workflow {
         .map { species, vcf, chromAlias, format -> 
             tuple(species, vcf, format)
         }
-        .randomSample(5)
         .combine(GET_ALIAS_FILES.out.alias_file, by: 0)
         .combine(GET_CHROM_FORMAT_HAL.out.format, by: 0)
         .combine(GET_REFERENCE.out.fasta, by: 0)
@@ -628,8 +616,7 @@ workflow {
     // VEP processing
     MAKE_VEP_CONFIG()
     
-    getSystemCpus.out.cpus
-        .combine(MAKE_POS_BED.out.bedxpos)
+    MAKE_POS_BED.out.bedxpos
         .combine(
              GET_REFERENCE_HUMAN.out.fasta
              .map{ species, fasta, fai ->
@@ -653,33 +640,27 @@ workflow {
                 tuple(fasta, fai)
             }
          )
-        .combine(MAKE_LIFTOVER_BED.out.lifttable, by: 0)
+        .combine(MAKE_LIFTOVER_BED.out.lifted_beds, by: 0)
         .combine(PROCESS_VEP.out.vep_processed)
         .set{ sp_fastas_liftbed_vep_ch }
      
     MAKE_LIFTOVER_TABLE(sp_fastas_liftbed_vep_ch)
     
+    Channel.fromPath(params.species_file)
+        .set{ sample_mapping_ch }
+
     // Merge MTs
     VCF2MT.out.mt
         .groupTuple()
-        .combine(
-            MAKE_LIFTOVER_TABLE.out.lifttable
-            .map{ species, pos_table, var_table ->
-                tuple(species, var_table)
-            },
-            by: 0) 
+        .combine(MAKE_LIFTOVER_TABLE.out.lifttable, by: 0) 
         .combine(GET_NUM_CONTIGS.out.contig_count, by: 0)
-        .combine(getSystemCpus.out.cpus)
+        .combine(sample_mapping_ch)
+        .take(2)
         .set{ sp_mts_lifttable_ch }
     
     MERGEMTS(sp_mts_lifttable_ch)
-    /*
-    // Final species merging
-    Channel.fromPath(params.species_file)
-        .set{ sample_mapping_ch }
     
     ANNOTATE_VEP.out.vep
-        .combine(sample_mapping_ch)
         .combine(
             GET_REFERENCE_HUMAN.out.fasta
             .map{ species, fasta, fai ->
@@ -691,16 +672,8 @@ workflow {
             .map { it[1] }
             .collect()
         )
-        .concat(
-            MAKE_LIFTOVER_TABLE.out.lifttable
-            .map{ species, pos_table, var_table ->
-                tuple(pos_table)
-            }
-            .collect()
-        )
         .toList()
-        .set{ vep_varhts_poshts_ch }
+        .set{ vep_fasta_varhts_ch }
     
-    MERGE_SPECIES_HTS(vep_varhts_poshts_ch)
-    */
+    MERGE_SPECIES_HTS(vep_fasta_varhts_ch)
 }

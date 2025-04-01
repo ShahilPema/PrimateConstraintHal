@@ -449,6 +449,8 @@ def main(gff_path, regulatory_gff_path, output_path):
             'region': pl.Utf8
         }
     ).sort(['hg38_chr', 'start', 'end'])
+   
+    processed_dataframe = processed_dataframe.filter(pl.col("hg38_chr") == "chr21")
 
     # Write output files
     processed_dataframe.write_csv(output_path, separator='\t')

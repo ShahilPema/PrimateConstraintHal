@@ -1,0 +1,99 @@
+Bootstrap: docker
+From: ensemblorg/ensembl-vep:release_113.0
+
+%labels
+    Author YourName
+    Version 1.0
+
+%post
+    # Update and install necessary packages
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get -y install tzdata
+    apt-get install -y \
+        aria2 \
+        curl \
+        wget \
+        git \
+        tabix \
+        bcftools \
+        build-essential \
+        gcc \
+        g++ \
+        make \
+        software-properties-common \
+        openjdk-11-jdk \
+        libblas-dev \
+        liblapack-dev \
+        libopenblas-dev \
+        samtools \
+        && apt-get clean
+
+    # Install Python 3.9
+    add-apt-repository -y ppa:deadsnakes/ppa
+    apt-get update
+    apt-get install -y \
+        python3.9 \
+        python3.9-dev \
+        python3.9-venv \
+        python3-pip
+
+    # Install VEP cache and plugins
+    perl /opt/vep/src/ensembl-vep/INSTALL.pl -a cf -s homo_sapiens -y GRCh38 --NO_UPDATE --CACHEDIR /opt/vep/.vep
+    
+    # Create Plugins directory and install LOFTEE
+    cd /plugins
+    git clone --single-branch --branch grch38 https://github.com/konradjk/loftee.git
+    mv /plugins/loftee/* /plugins
+    rm -rf /plugins/loftee
+    
+    # Download required LOFTEE data files
+    cd /opt/vep/.vep
+    
+    # Download all required files from the GRCh38 directory
+    aria2c -x 16 -s 16 -j 16 --file-allocation=none https://personal.broadinstitute.org/konradk/loftee_data/GRCh38/gerp_conservation_scores.homo_sapiens.GRCh38.bw 
+    aria2c -x 16 -s 16 -j 16 --file-allocation=none https://personal.broadinstitute.org/konradk/loftee_data/GRCh38/human_ancestor.fa.gz
+    
+    aria2c -x 1 -s 1 -j 1 --file-allocation=none https://personal.broadinstitute.org/konradk/loftee_data/GRCh38/human_ancestor.fa.gz.fai 
+    aria2c -x 1 -s 1 -j 1 --file-allocation=none https://personal.broadinstitute.org/konradk/loftee_data/GRCh38/human_ancestor.fa.gz.gzi
+    aria2c -x 1 -s 1 -j 1 --file-allocation=none https://personal.broadinstitute.org/konradk/loftee_data/GRCh38/loftee.sql.gz
+    gunzip loftee.sql.gz
+    # Install required Perl modules
+    cpanm DBD::SQLite
+    cpanm Bio::DB::HTS
+ 
+    # Convert cache for faster variant lookup
+    perl /opt/vep/src/ensembl-vep/convert_cache.pl -species homo_sapiens -version 113_GRCh38 --dir /opt/vep/.vep
+    
+    # Make Python 3.9 the default
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1
+    update-alternatives --set python3 /usr/bin/python3.9
+
+    # Upgrade pip
+    python3 -m pip install --upgrade pip
+
+    # Install Python packages
+    pip3 install --no-cache-dir \
+        polars \
+        hail \
+        pandas \
+        numpy \
+        typing_extensions \
+        pathlib \
+        requests \
+        pytest \
+        scipy \
+        notebook
+
+    # Download and set up bigWigToBedGraph
+    aria2c -x 1 https://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/bigWigToBedGraph
+    chmod +x bigWigToBedGraph
+    mv bigWigToBedGraph /usr/local/bin/
+
+%environment
+    export PATH=/usr/bin:$PATH
+    export VEP_DATA=/opt/vep/.vep
+    export VEP_PATH=/opt/vep/src/ensembl-vep
+
+%runscript
+    exec aria2c "$@"
+

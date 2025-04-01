@@ -14,8 +14,8 @@ parser.add_argument("--tmpdir", required=True, help="Local temp dir")
 args = parser.parse_args()
 
 config = {
-    'spark.driver.memory': f'{args.memory}g',  #Set to total memory
-    'spark.executor.memory': f'{args.memory}g',  #Set to total memory
+    'spark.driver.memory': f'{args.memory}',  #Set to total memory
+    'spark.executor.memory': f'{args.memory}',  #Set to total memory
     'spark.local.dir': args.tmpdir,
 }
 
@@ -28,7 +28,7 @@ vep = vep.repartition(int(args.cpus) * 4)
 vep = vep.checkpoint('A.ht', overwrite=True)
 
 vep = vep.annotate(
-    regions = vep.region.split(',')
+    regions = vep.regions.split(',')
 )
 
 vep = vep.explode('regions')
@@ -119,9 +119,12 @@ vep = vep.annotate(
 
 vep = vep.checkpoint('B.ht', overwrite=True)
 
+"""
 vep = vep.key_by('protein_start', 'transcript')
 
 vep = vep.checkpoint('C.ht', overwrite=True)
+
+
 
 vep_contiguous = vep.filter(vep.region_type == 'CDS')
 
@@ -141,6 +144,7 @@ vep_contiguous = vep_contiguous.distinct()
 vep_contiguous = vep_contiguous.checkpoint('D.ht', overwrite=True)
 
 vep = vep.annotate(contiguous = vep_contiguous[vep.key].contiguous)
+"""
 
 vep = vep.checkpoint('E.ht', overwrite=True)
 

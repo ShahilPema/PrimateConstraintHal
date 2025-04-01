@@ -7,17 +7,18 @@ import psutil
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Process a VCF file with Hail.")
 parser.add_argument("--cpus", required=True, help="Total cpus on machine")
+parser.add_argument("--memory", required=True, help="Total memory on machine")
 parser.add_argument("--position_table", required=True, help="Path to table of positions to be annotated with VEP.")
 parser.add_argument("--human_fasta_path", required=True, help="Path to the FASTA file for the primate genome.")
 parser.add_argument("--human_index_path", required=True, help="Path to the FASTA index file (.fai).")
 parser.add_argument("--vep_config", required=True, help="Config file for VEP.")
+parser.add_argument("--tmpdir", required=True, help="Temporary directory")
 parser.add_argument("--output", required=True, help="Output directory")
 args = parser.parse_args()
 
-memory = int(psutil.virtual_memory().total / (1024 ** 3) * 0.9)
-config = {'spark.driver.memory': f'{memory}g'}
+config = {'spark.driver.memory': f'{args.memory}', 'spark.local.dir': args.tmpdir}
 
-hl.init(spark_conf=config, master=f'local[{args.cpus}]')
+hl.init(spark_conf=config, master=f'local[{args.cpus}]', tmp_dir=args.tmpdir, local_tmpdir=args.tmpdir)
 
 rg = hl.ReferenceGenome.from_fasta_file(
     name='Homo_sapiens',
@@ -33,7 +34,7 @@ bed_ht = bed_ht.repartition(int(args.cpus))
 bed_ht = bed_ht.annotate(variant_str = bed_ht.hg38_chr + ":" + hl.str(bed_ht.hg38_position))
 bed_ht = bed_ht.annotate(locus = hl.parse_locus(bed_ht.variant_str,reference_genome='Homo_sapiens'))
 bed_ht = bed_ht.annotate(
-    ref=bed_ht.locus.sequence_context()
+    ref=bed_ht.locus.sequence_context().upper()
 )
 bed_ht = bed_ht.annotate(
     possible_alts=hl.if_else(
@@ -54,9 +55,10 @@ bed_ht = bed_ht.select(
     hg38_position = hl.int32(bed_ht.hg38_position),
     REF = bed_ht.ref,
     ALT = bed_ht.possible_alts,
-    region = bed_ht.region
+    regions = bed_ht.region
 )
 
+bed_ht = bed_ht.repartition(int(args.cpus))
 bed_ht = bed_ht.checkpoint(f'{args.output}/vep_cpt.ht', overwrite=True)
 bed_ht = hl.vep(bed_ht, args.vep_config)
 bed_ht.write(f'{args.output}/vep.ht', overwrite=True)
