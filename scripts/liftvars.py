@@ -181,9 +181,9 @@ def count_by_order(sample_list, order_name):
 # Add order-specific counts
 species_ht = species_ht.annotate(
     **{
-        f"{order}_hom": count_by_order(hl.array(hl.set(species_ht.hom_samples), order)) for order in orders
+        f"{order}_hom": count_by_order(hl.array(hl.set(species_ht.hom_samples)), order) for order in orders
     }, **{
-        f"{order}_het": count_by_order(hl.array(hl.set(species_ht.het_samples), order)) for order in orders
+        f"{order}_het": count_by_order(hl.array(hl.set(species_ht.het_samples)), order) for order in orders
     }
 )
 

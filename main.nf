@@ -494,7 +494,7 @@ process MERGE_SPECIES_HTS {
     tuple path(vep), path(human_fa), path(human_faidx), path(var_hts)
 
     output:
-    path("aggregated_primate_counts_with_position_info.ht"), emit: all_species
+    path("aggregated_primate_counts.ht"), emit: all_species
 
     script:
     """
@@ -655,7 +655,6 @@ workflow {
         .combine(MAKE_LIFTOVER_TABLE.out.lifttable, by: 0) 
         .combine(GET_NUM_CONTIGS.out.contig_count, by: 0)
         .combine(sample_mapping_ch)
-        .take(2)
         .set{ sp_mts_lifttable_ch }
     
     MERGEMTS(sp_mts_lifttable_ch)
