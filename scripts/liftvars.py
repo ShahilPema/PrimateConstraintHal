@@ -212,7 +212,8 @@ species_ht = species_ht.annotate(
     species_pentamer = species_ht.pos_info.species_pentamer,
     reciprocal_mapping = species_ht.pos_info.reciprocal_mapping,
     human2species_mappings = species_ht.pos_info.human2species_mappings,
-    overlapping_annotations = species_ht.pos_info.overlapping_annotations
+    overlapping_annotations = species_ht.pos_info.overlapping_annotations,
+    strand_v_human_ref = species_ht.pos_info.strand_v_human_ref
 )
 
 species_ht = species_ht.checkpoint(f'./tmp/{args.species}_data.ht', overwrite=True)
@@ -220,7 +221,7 @@ species_ht = species_ht.checkpoint(f'./tmp/{args.species}_data.ht', overwrite=Tr
 non_call_columns = [
     'species_locus', 'species_alleles', 'transcript_mappings', 'species', 'family', 'order', 'reference', 'AN', 'AC', 
     'AF', 'n_hom', 'n_het', 'samples', 'hom_samples', 'het_samples', 'ref_match', 'min_hamming', 'pentamer_error', 
-    'species_pentamer', 'reciprocal_mapping', 'human2species_mappings', 'overlapping_annotations'
+    'species_pentamer', 'reciprocal_mapping', 'human2species_mappings', 'overlapping_annotations', 'strand_v_human_ref'
     ] + [f"{order}_hom" for order in orders] + [f"{order}_het" for order in orders]
 
 species_ht = species_ht.annotate(
