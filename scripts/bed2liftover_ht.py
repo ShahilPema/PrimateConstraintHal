@@ -555,7 +555,7 @@ lifttable = lifttable.annotate(
         .when(lifttable.ref_match == 0,
               hl.case() \
               .when(lifttable.strand_v_human_ref == 1, process_alleles(lifttable.alleles, lifttable.species_ref)) \
-              .when(lifttable.strand_v_human_ref == -1, hl.map(lambda x: x.translate(complement), process_alleles(lifttable.alleles, lifttable.species_ref))) \
+              .when(lifttable.strand_v_human_ref == -1, process_alleles(hl.map(lambda x: x.translate(complement), lifttable.alleles), lifttable.species_ref)) \
               .default(hl.missing(hl.tarray(hl.tstr)))
              )
         .default(hl.missing(hl.tarray(hl.tstr))),
