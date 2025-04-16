@@ -503,9 +503,8 @@ lifttable = lifttable.annotate(
     species_alt_aa = translate.get(lifttable.species_alt_codon)
 )
 
-def annotate_alt_consequence(ref_aa, alt_aa, codon_position, ref_match=None, species=False):
+def annotate_alt_consequence(ref_aa, alt_aa, codon_position):
     return hl.case() \
-        .when((species == True) & (ref_match == 0), "ref_mismatch") \
         .when((ref_aa == "M") & (alt_aa != "M") & (codon_position == 1), "start_lost") \
         .when((ref_aa != alt_aa) & (ref_aa != "*") & (alt_aa != "*"), "missense_variant") \
         .when((ref_aa == "*") & (alt_aa == "*"), "stop_retained") \
@@ -518,7 +517,7 @@ def annotate_alt_consequence(ref_aa, alt_aa, codon_position, ref_match=None, spe
 # Apply the function for both human and species annotations
 lifttable = lifttable.annotate(
     human_alt_cons=annotate_alt_consequence(lifttable.human_aa, lifttable.human_alt_aa, lifttable.codon_position),
-    species_alt_cons=annotate_alt_consequence(lifttable.species_aa, lifttable.species_alt_aa, lifttable.codon_position, lifttable.ref_match, species=True),
+    species_alt_cons=annotate_alt_consequence(lifttable.species_aa, lifttable.species_alt_aa, lifttable.codon_position),
     codon_mismatch_cons = hl.if_else(
         lifttable.codon_match == 0,
         annotate_alt_consequence(lifttable.human_aa, lifttable.species_aa, lifttable.codon_position),
