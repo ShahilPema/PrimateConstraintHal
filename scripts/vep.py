@@ -59,7 +59,7 @@ bed_ht = bed_ht.select(
 )
 
 bed_ht = bed_ht.repartition(int(args.cpus))
-bed_ht = bed_ht.checkpoint(f'{args.output}/vep_cpt.ht', overwrite=True)
+bed_ht = bed_ht.checkpoint(f'{args.output}/regionsxvar.ht', overwrite=True)
 bed_ht = hl.vep(bed_ht, args.vep_config)
 bed_ht.write(f'{args.output}/vep.ht', overwrite=True)
 
