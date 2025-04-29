@@ -344,7 +344,7 @@ process ANNOTATE_VEP {
     tuple path(position_table_path), path(human_fasta_path), path(human_index_path), path(vep_config)
 
     output:
-    path("vep.ht"), emit: vep
+    tuple path("vep.ht"), path("regionsxvar.ht"), emit: vep
 
     script:
     """
@@ -627,7 +627,7 @@ workflow {
         .set{ vep_ch }
     
     ANNOTATE_VEP(vep_ch)
-    PROCESS_VEP(ANNOTATE_VEP.out.vep)
+    PROCESS_VEP(ANNOTATE_VEP.out.vep.map { it[0] })
     
     // Get contig counts
     GET_NUM_CONTIGS(GET_REFERENCE.out.fasta)
@@ -659,7 +659,7 @@ workflow {
     
     MERGEMTS(sp_mts_lifttable_ch)
     
-    ANNOTATE_VEP.out.vep
+    ANNOTATE_VEP.out.vep.map { it[0] }
         .combine(
             GET_REFERENCE_HUMAN.out.fasta
             .map{ species, fasta, fai ->
