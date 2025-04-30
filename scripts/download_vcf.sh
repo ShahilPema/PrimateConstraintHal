@@ -12,5 +12,3 @@ find . -type f -name "*.gz" -exec sh -c '
 ' sh {} \;
 
 rm *.json
-
-mv *.gz $2
