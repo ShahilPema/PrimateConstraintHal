@@ -527,7 +527,6 @@ lifttable = lifttable.annotate(
 
 lifttable = lifttable.annotate(
     alt_cons_match = hl.case() \
-         .when((lifttable.species_alt_cons == 'ref_mismatch'), hl.missing(hl.tint))
          .when((lifttable.human_alt_cons == lifttable.species_alt_cons) & (hl.is_defined(lifttable.human_alt_cons)), hl.literal(1)) \
          .when((lifttable.human_alt_cons != lifttable.species_alt_cons) & (hl.is_defined(lifttable.human_alt_cons)), hl.literal(0)) \
          .default(hl.missing(hl.tint))

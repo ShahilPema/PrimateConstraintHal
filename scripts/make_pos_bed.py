@@ -34,6 +34,7 @@ def process_bed_file(input_file, outdir):
         (pl.col('hg38_position') + 1).alias('hg38_position')
     )
 
+    print(f'Total number of rows: {bed_data.shape[0]}')
     # Write to a Parquet file
     output_file = os.path.join(outdir, 'features_by_position.parquet')
     bed_data.write_parquet(output_file)
