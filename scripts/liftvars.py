@@ -207,6 +207,7 @@ species_ht = species_ht.annotate(
     pos_info = pos_ht[species_ht.key][f'{args.species}_pos_info']
 )
 
+species_ht = species_ht.checkpoint(f'{args.tmpdir}/{args.species}_data2_1.ht', overwrite=True)
         
 # Annotate with position-level info 'ref_match', 'min_hamming', 'pentamer_error' and 'pentamer'
 species_ht = species_ht.annotate(
