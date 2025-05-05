@@ -451,12 +451,6 @@ def main(gff_path, regulatory_gff_path, output_path):
         orient='row'
     ).sort(['hg38_chr', 'start', 'end'])
    
-    processed_dataframe = processed_dataframe.filter(pl.col("region").str.contains('CDS') |
-                                                     pl.col("region").str.contains('5PrimeUTR') |
-                                                     pl.col("region").str.contains('5PrimeUTRSpliceSite') |
-                                                     pl.col("region").str.ends_with('-SpliceSite')
-    )
-
     # Write output files
     processed_dataframe.write_csv(output_path, separator='\t')
     

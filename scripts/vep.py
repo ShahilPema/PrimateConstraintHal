@@ -16,7 +16,13 @@ parser.add_argument("--tmpdir", required=True, help="Temporary directory")
 parser.add_argument("--output", required=True, help="Output directory")
 args = parser.parse_args()
 
-config = {'spark.driver.memory': f'{args.memory}', 'spark.local.dir': args.tmpdir}
+config = {
+    'spark.driver.memory': f'{args.memory}',  #Set to total memory
+    'spark.executor.memory': f'{args.memory}',
+    'spark.local.dir': args.tmpdir,
+    'spark.driver.extraJavaOptions': f'-Djava.io.tmpdir={args.tmpdir}',
+    'spark.executor.extraJavaOptions': f'-Djava.io.tmpdir={args.tmpdir}'
+}
 
 hl.init(spark_conf=config, master=f'local[{args.cpus}]', tmp_dir=args.tmpdir, local_tmpdir=args.tmpdir)
 

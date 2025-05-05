@@ -150,7 +150,12 @@ process VCF2MT {
     script:
     vcf_bname=vcf_file.baseName.replaceAll(/\.SNV\.vcf$/, '')
     """
-    python3 ${params.scriptsDir}/vcf2mt.py --species "${species}" \
+    local_tmp=\$(mktemp -d \${PWD}/tmp_XXXXXX)
+    memory=\$(echo "${task.memory}" | awk '/GB/ { gsub(" GB", "", \$1); print \$1 "g" } /TB/ { gsub(" TB", "", \$1); printf "%.0f", \$1 * 1000; print "g" }')
+    python3 ${params.scriptsDir}/vcf2mt.py --cpus "${task.cpus}" \
+                                           --species "${species}" \
+                                           --memory "\${memory}" \
+                                           --tmpdir "\$local_tmp" \
                                            --vcf_file "${vcf_file}" \
                                            --alias_file "${alias_file}" \
                                            --vcf_format "${vcf_format}" \
@@ -158,6 +163,7 @@ process VCF2MT {
                                            --primate_fasta_path "${primate_fasta}" \
                                            --primate_index_path "${primate_index}" \
                                            --output .
+    trap "rm -rf \${local_tmp}" EXIT
     """
 }
 
@@ -262,6 +268,8 @@ process GET_CHROM_FORMAT_HAL {
 process GET_NUM_CONTIGS {
     executor 'local'
     maxForks 1
+    memory '40 GB'
+    cpus 10
 
     input:
     tuple val(species), path(fasta), path(indexes)
@@ -271,7 +279,10 @@ process GET_NUM_CONTIGS {
 
     script:
     """
-    contigs=\$(python ${params.scriptsDir}/get_contig_count.py --species $species --species_fasta_path $fasta --species_index_path $indexes)
+    local_tmp=\$(mktemp -d \${PWD}/tmp_XXXXXX) 
+    memory=\$(echo "${task.memory}" | awk '/GB/ { gsub(" GB", "", \$1); print \$1 "g" } /TB/ { gsub(" TB", "", \$1); printf "%.0f", \$1 * 1000; print "g" }')
+    contigs=\$(python ${params.scriptsDir}/get_contig_count.py --cpus "${task.cpus}" --memory "\${memory}" --tmpdir "\$local_tmp" --species $species --species_fasta_path $fasta --species_index_path $indexes)
+    trap "rm -rf \${local_tmp}" EXIT
     """
 }
 
@@ -348,8 +359,8 @@ process ANNOTATE_VEP {
 
     script:
     """
-    local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX) 
-    memory=\$(echo "${task.memory}" | sed 's/ GB/g/')
+    local_tmp=\$(mktemp -d \${PWD}/tmp_XXXXXX) 
+    memory=\$(echo "${task.memory}" | awk '/GB/ { gsub(" GB", "", \$1); print \$1 "g" } /TB/ { gsub(" TB", "", \$1); printf "%.0f", \$1 * 1000; print "g" }')
     python3 ${params.scriptsDir}/vep.py --cpus "${task.cpus}" \
                                         --memory "\${memory}" \
                                         --tmpdir "\$local_tmp" \
@@ -358,6 +369,7 @@ process ANNOTATE_VEP {
                                         --human_index_path "${human_index_path}" \
                                         --vep_config "${vep_config}" \
                                         --output .
+    trap "rm -rf \${local_tmp}" EXIT
     """
 }
 
@@ -376,14 +388,15 @@ process PROCESS_VEP {
 
     script:
     """
-    local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX)
-    memory=\$(echo "${task.memory}" | sed 's/ GB/g/')
+    local_tmp=\$(mktemp -d \${PWD}/tmp_XXXXXX)
+    memory=\$(echo "${task.memory}" | awk '/GB/ { gsub(" GB", "", \$1); print \$1 "g" } /TB/ { gsub(" TB", "", \$1); printf "%.0f", \$1 * 1000; print "g" }')    
     python3 ${params.scriptsDir}/processvep.py \
         --vep_ht "${vep_ht}" \
         --cpus "${task.cpus}" \
         --memory "\${memory}" \
         --tmpdir "\$local_tmp" \
         --output .
+    trap "rm -rf \${local_tmp}" EXIT
     """
 }
 
@@ -399,6 +412,9 @@ process MAKE_LIFTOVER_BED {
     time { params.max_time }
     maxRetries 0
 
+    when:
+    !file("${projectDir}/liftover/${species}").exists()
+
     input:
     tuple val(species), path(hal_file), path(bed_files)
 
@@ -407,8 +423,9 @@ process MAKE_LIFTOVER_BED {
 
     script:
     """
-    local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX)
+    local_tmp=\$(mktemp -d \${PWD}/tmp_XXXXXX)
     parallel --tmpdir "\$local_tmp" -j \$((${task.cpus} - 10)) bash ${params.scriptsDir}/liftover_bed.sh {} $species $hal_file -o . ::: $bed_files
+    trap "rm -rf \${local_tmp}" EXIT
     """
 }
 
@@ -429,8 +446,8 @@ process MAKE_LIFTOVER_TABLE {
 
     script:
     """
-    local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX) 
-    memory=\$(echo "${task.memory}" | sed 's/ GB/g/')
+    local_tmp=\$(mktemp -d \${PWD}/tmp_XXXXXX) 
+    memory=\$(echo "${task.memory}" | awk '/GB/ { gsub(" GB", "", \$1); print \$1 "g" } /TB/ { gsub(" TB", "", \$1); printf "%.0f", \$1 * 1000; print "g" }')    
     python3 ${params.scriptsDir}/bed2liftover_ht.py \
         --species "$species" \
         --human_fasta_path "$human_fasta_path" \
@@ -443,6 +460,7 @@ process MAKE_LIFTOVER_TABLE {
         --memory "\${memory}" \
         --tmpdir "\$local_tmp" \
         --output "\${PWD}" 
+    trap "rm -rf \${local_tmp}" EXIT
     """ 
 }
 
@@ -466,8 +484,8 @@ process MERGEMTS {
 
     script:
     """
-    local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX) 
-    memory=\$(echo "${task.memory}" | sed 's/ GB/g/')
+    local_tmp=\$(mktemp -d \${PWD}/tmp_XXXXXX) 
+    memory=\$(echo "${task.memory}" | awk '/GB/ { gsub(" GB", "", \$1); print \$1 "g" } /TB/ { gsub(" TB", "", \$1); printf "%.0f", \$1 * 1000; print "g" }')
     python3 ${params.scriptsDir}/liftvars.py \
         --species "$species" \
         --sample_mts "$mts" \
@@ -479,6 +497,7 @@ process MERGEMTS {
         --memory "\${memory}" \
         --tmpdir "\$local_tmp" \
         --outdir "\${PWD}"
+    trap "rm -rf \${local_tmp}" EXIT
     """
 }
 
@@ -498,8 +517,8 @@ process MERGE_SPECIES_HTS {
 
     script:
     """
-    local_tmp=\$(mktemp -d \${PWD}/tmp.XXXXXX) 
-    memory=\$(echo "${task.memory}" | sed 's/ GB/g/')
+    local_tmp=\$(mktemp -d \${PWD}/tmp_XXXXXX) 
+    memory=\$(echo "${task.memory}" | awk '/GB/ { gsub(" GB", "", \$1); print \$1 "g" } /TB/ { gsub(" TB", "", \$1); printf "%.0f", \$1 * 1000; print "g" }')
     python3 ${params.scriptsDir}/merge_all.py \
         --vep "$vep" \
         --human_fa "$human_fa" \
@@ -509,6 +528,7 @@ process MERGE_SPECIES_HTS {
         --memory "\${memory}" \
         --tmpdir "\$local_tmp" \
         --outdir "\${PWD}"
+    trap "rm -rf \${local_tmp}" EXIT
     """
 }
 
@@ -584,9 +604,26 @@ workflow {
     sp_hal_ch
         .combine(MAKE_HG38_BEDS.out.hg38beds.toList())
         .set { sp_hal_hg38beds_ch }
-    
+      
     // Process liftover and references
-    MAKE_LIFTOVER_BED(sp_hal_hg38beds_ch)
+    sp_hal_hg38beds_ch
+    .filter { species, hal_file, bed_files ->
+        file("${projectDir}/liftover/${species}/${species}_pos_info.ht").exists() &&
+        file("${projectDir}/liftover/${species}/${species}_var_info.ht").exists()
+    }
+    .map { species, hal_file, bed_files ->
+        def pos_ht = file("${projectDir}/liftover/${species}/${species}_pos_info.ht")
+        def var_ht = file("${projectDir}/liftover/${species}/${species}_var_info.ht")
+        tuple(species, pos_ht, var_ht)
+    }
+    .set { existing_lifttable_ch }
+
+    sp_hal_hg38beds_ch
+        .filter { species, hal_file, bed_files ->
+            !file("${projectDir}/liftover/${species}/${species}_var_info.ht").exists()
+        }
+        | MAKE_LIFTOVER_BED
+
     GET_REFERENCE(sp_hal_ch)
     GET_REFERENCE_HUMAN(hal)
     
@@ -649,10 +686,14 @@ workflow {
     Channel.fromPath(params.species_file)
         .set{ sample_mapping_ch }
 
+    MAKE_LIFTOVER_TABLE.out.lifttable
+    .mix(existing_lifttable_ch)
+    .set { all_lifttables_ch }
+
     // Merge MTs
     VCF2MT.out.mt
         .groupTuple()
-        .combine(MAKE_LIFTOVER_TABLE.out.lifttable, by: 0) 
+        .combine(all_lifttables_ch, by:0) 
         .combine(GET_NUM_CONTIGS.out.contig_count, by: 0)
         .combine(sample_mapping_ch)
         .set{ sp_mts_lifttable_ch }

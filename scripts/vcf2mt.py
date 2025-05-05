@@ -12,6 +12,8 @@ from typing import Optional
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Process a VCF file with Hail.")
+    parser.add_argument("--cpus", required=True, help="Total cpus on machine")
+    parser.add_argument("--memory", required=True, help="Total memory on machine")
     parser.add_argument("--species", required=True, help="Species name (e.g., 'Macaca_mulatta').")
     parser.add_argument("--vcf_file", required=True, help="Path to the VCF file.")
     parser.add_argument("--alias_file", required=True, help="Path to the alias file.")
@@ -19,15 +21,19 @@ def main():
     parser.add_argument("--hal_format", required=True, help="HAL contig format (e.g., 'refseq').")
     parser.add_argument("--primate_fasta_path", required=True, help="Path to the FASTA file for the primate genome.")
     parser.add_argument("--primate_index_path", required=True, help="Path to the FASTA index file (.fai).")
+    parser.add_argument("--tmpdir", required=True, help="Temporary directory")
     parser.add_argument("--output", required=True, help="Output directory")
     args = parser.parse_args()
 
-    # Resource configuration
     config = {
-        'spark.driver.memory': '60g',
+        'spark.driver.memory': f'{args.memory}',  #Set to total memory
+        'spark.executor.memory': f'{args.memory}',
+        'spark.local.dir': args.tmpdir,
+        'spark.driver.extraJavaOptions': f'-Djava.io.tmpdir={args.tmpdir}',
+        'spark.executor.extraJavaOptions': f'-Djava.io.tmpdir={args.tmpdir}'
     }
-    
-    hl.init(spark_conf=config, master='local[12]')
+ 
+    hl.init(spark_conf=config, master=f'local[{args.cpus}]', tmp_dir=args.tmpdir, local_tmpdir=args.tmpdir)
 
     # Load alias file and create mapping
     if args.vcf_format != args.hal_format:
