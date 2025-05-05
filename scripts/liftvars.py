@@ -26,8 +26,8 @@ config = {
 
 hl.init(spark_conf=config, master=f'local[{args.cpus}]', tmp_dir=args.tmpdir, local_tmpdir=args.tmpdir)
 
-id_info = hl.import_table(args.mapping, delimiter=',')
-id_info = id_info.rename({'\ufeffID': 'ID'})
+id_info = hl.import_table(args.mapping, delimiter=',', impute=True)
+id_info = id_info.rename({'???ID': 'ID'})
 species_dict = hl.dict(hl.zip(id_info.ID.collect(), id_info.SPECIES.collect()))
 family_dict = hl.dict(hl.zip(id_info.ID.collect(), id_info.FAMILY.collect()))
 reference_dict = hl.dict(hl.zip(id_info.ID.collect(), id_info.REFERENCE.collect()))
