@@ -102,7 +102,7 @@ for file in sample_mt_list:
                                 .default(hl.call(0,0))
     )
     species_ht = species_ht.rename({'GT':sample_id})
-    species_ht = species_ht.checkpoint(f'./tmp/checkpoint_{count}.ht', overwrite=True)
+    species_ht = species_ht.checkpoint(f'{args.tmpdir}/checkpoint_{count}.ht', overwrite=True)
     count += 1
 
 tcall_columns = [name for name, dtype in species_ht.row.dtype.items() if dtype == hl.tcall]
@@ -169,7 +169,7 @@ species_ht = species_ht.annotate(
 )
 
 
-species_ht = species_ht.checkpoint(f'./tmp/{args.species}_data1.ht', overwrite=True)
+species_ht = species_ht.checkpoint(f'{args.tmpdir}/{args.species}_data1.ht', overwrite=True)
 
 species_ht = species_ht.annotate(
     AF = species_ht.AC / species_ht.AN
@@ -197,7 +197,7 @@ pos_ht = hl.read_table(args.pos_ht)
 # Ensure the data is keyed by Homo_sapiens locus for proper join
 pos_ht = pos_ht.key_by(f'locus_{args.species}')
 
-species_ht = species_ht.checkpoint(f'./tmp/{args.species}_data2.ht', overwrite=True)
+species_ht = species_ht.checkpoint(f'{args.tmpdir}/{args.species}_data2.ht', overwrite=True)
 
  
 # Annotate the all_positions table with the position-level data
@@ -218,7 +218,7 @@ species_ht = species_ht.annotate(
     strand_v_human_ref = species_ht.pos_info.strand_v_human_ref
 )
 
-species_ht = species_ht.checkpoint(f'./tmp/{args.species}_data.ht', overwrite=True)
+species_ht = species_ht.checkpoint(f'{args.tmpdir}/{args.species}_data.ht', overwrite=True)
     
 non_call_columns = [
     'species_locus', 'species_alleles', 'transcript_mappings', 'species', 'family', 'order', 'reference', 'AN', 'AC', 
@@ -238,7 +238,7 @@ species_ht = species_ht.key_by()
 
 species_ht = species_ht.select('locus', 'alleles', 'species_data', 'call_data')
 
-species_ht = species_ht.checkpoint('./tmp/A.ht', overwrite=True)
+species_ht = species_ht.checkpoint(f'{args.tmpdir}/A.ht', overwrite=True)
 
 species_ht = species_ht.group_by('locus', 'alleles').aggregate(
     species_data = hl.agg.collect(species_ht.species_data),
@@ -252,6 +252,3 @@ species_ht.write(f'{args.outdir}/{args.species}_lifted_vars.ht', overwrite=True)
 column_data = column_data.repartition(1)
 
 column_data.write(f'{args.outdir}/{args.species}_colinfo_vars.ht', overwrite=True)
-
-if os.path.isdir('tmp'):
-    shutil.rmtree('tmp')
