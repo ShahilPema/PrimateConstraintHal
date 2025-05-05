@@ -189,6 +189,8 @@ species_ht = species_ht.annotate(
     }
 )
 
+species_ht = species_ht.checkpoint(f'{args.tmpdir}/{args.species}_data1_2.ht', overwrite=True)
+
 species_ht = species_ht.key_by('species_locus')
 
 # Read the position-level data
