@@ -1,7 +1,6 @@
+
 import hail as hl
 import argparse
-import shutil
-import os
 
 parser = argparse.ArgumentParser(description="Perform liftover from species-specific BED to human BED using Hail.")
 parser.add_argument("--species", required=True, help="Name of the species to process (e.g., Pithecia_pithecia).")
@@ -26,14 +25,12 @@ config = {
 
 hl.init(spark_conf=config, master=f'local[{args.cpus}]', tmp_dir=args.tmpdir, local_tmpdir=args.tmpdir)
 
-id_info = hl.import_table(args.mapping, delimiter=',', impute=True)
-id_info = id_info.rename({'???ID': 'ID'})
-species_dict = hl.dict(hl.zip(id_info.ID.collect(), id_info.SPECIES.collect()))
-family_dict = hl.dict(hl.zip(id_info.ID.collect(), id_info.FAMILY.collect()))
-reference_dict = hl.dict(hl.zip(id_info.ID.collect(), id_info.REFERENCE.collect()))
+id_info = hl.import_table(args.mapping, delimiter=',', impute=True, no_header=False)
+#id_info = id_info.rename({'\ufeffID': 'ID'})
+#id_info = id_info.rename({'???ID': 'ID'})
 
 # Add family to order mapping
-family_to_order = hl.literal({
+family_to_order = hl.dict({
     "Pitheciidae": "Platyrrhini",  # New World Monkeys
     "Callitrichidae": "Platyrrhini",
     "Atelidae": "Platyrrhini",
@@ -52,12 +49,16 @@ family_to_order = hl.literal({
     "Tarsiidae": "Tarsiiformes"  # Tarsiers
 })
 
-# Create order dictionary based on family
-order_dict = hl.dict(hl.zip(
-                            id_info.ID.collect(),
-                            [family_to_order.get(x) for x in id_info.FAMILY.collect()]
-                        )
-                    )
+# Annotate id_info with order, key it, and checkpoint
+id_info = id_info.annotate(ORDER = family_to_order.get(id_info.FAMILY, hl.missing(hl.tstr)))
+id_info = id_info.key_by('ID')
+id_info = id_info.checkpoint(f'{args.tmpdir}/id_info_lookup.ht', overwrite=True)
+
+
+species_dict = hl.dict(hl.zip(id_info.ID.collect(), id_info.SPECIES.collect()))
+family_dict = hl.dict(hl.zip(id_info.ID.collect(), id_info.FAMILY.collect()))
+order_dict = hl.dict(hl.zip(id_info.ID.collect(), id_info.ORDER.collect()))
+reference_dict = hl.dict(hl.zip(id_info.ID.collect(), id_info.REFERENCE.collect()))
 
 species_ht = hl.read_table(args.species_ht)
 
@@ -72,7 +73,7 @@ if contig_count > 100000:
 
 sample_mt_list = args.sample_mts.split()
 column_data = None
-count = 1
+checkpoint = 'A'
 
 for file in sample_mt_list:
     print(file)
@@ -102,8 +103,11 @@ for file in sample_mt_list:
                                 .default(hl.call(0,0))
     )
     species_ht = species_ht.rename({'GT':sample_id})
-    species_ht = species_ht.checkpoint(f'{args.tmpdir}/checkpoint_{count}.ht', overwrite=True)
-    count += 1
+    species_ht = species_ht.checkpoint(f'{args.tmpdir}/checkpoint_{checkpoint}.ht', overwrite=True)
+    if checkpoint == 'A':
+        checkpoint = 'B'
+    else:
+        checkpoint = 'A'
 
 tcall_columns = [name for name, dtype in species_ht.row.dtype.items() if dtype == hl.tcall]
 
@@ -154,10 +158,10 @@ species_ht = species_ht.annotate(
 )
 
 species_ht = species_ht.annotate(
-    species = hl.set(species_ht.samples.map(lambda x: species_dict[x])),
-    family = hl.set(species_ht.samples.map(lambda x: family_dict[x])),
-    reference = hl.set(species_ht.samples.map(lambda x: reference_dict[x])),
-    order = hl.set(species_ht.samples.map(lambda x: order_dict[x])),
+    species = hl.set(species_ht.samples).map(lambda x: species_dict[x]),
+    family = hl.set(species_ht.samples).map(lambda x: family_dict[x]),
+    reference = hl.set(species_ht.samples).map(lambda x: reference_dict[x]),
+    order = hl.set(species_ht.samples).map(lambda x: order_dict[x]),
     n_hom = hl.or_else(hl.len(species_ht.hom_samples), 0),
     n_het = hl.or_else(hl.len(species_ht.het_samples), 0),
     n_ref = hl.or_else(hl.len(species_ht.ref_samples), 0)
@@ -175,21 +179,34 @@ species_ht = species_ht.annotate(
     AF = species_ht.AC / species_ht.AN
 )
 
+species_ht = species_ht.annotate(**{
+    f"{sample_type}_orders": hl.set(species_ht[f"{sample_type}_samples"])
+    for sample_type in ["hom", "het"]
+})
+
+species_ht = species_ht.checkpoint(f'{args.tmpdir}/{args.species}_data1_cpt1.ht', overwrite=True)
+
+species_ht = species_ht.annotate(
+    hom_orders = species_ht.hom_orders.map(lambda x: order_dict[x])
+)
+species_ht = species_ht.checkpoint(f'{args.tmpdir}/{args.species}_data1_cpt2.ht', overwrite=True)
+
+species_ht = species_ht.annotate(
+    het_orders = species_ht.het_orders.map(lambda x: order_dict[x])
+)
+species_ht = species_ht.checkpoint(f'{args.tmpdir}/{args.species}_data1_cpt3.ht', overwrite=True)
+
 orders = ["Platyrrhini", "Catarrhini", "Strepsirrhini", "Tarsiiformes"]
 
-def count_by_order(sample_list, order_name):
-    return hl.sum(sample_list.map(lambda x: hl.if_else(order_dict[x] == order_name, 1, 0)))
+species_ht = species_ht.annotate(**{
+    f"{order}_{sample_type}": hl.sum(
+        species_ht[f"{sample_type}_orders"].map(lambda x: (x == order))
+    )
+    for order in orders
+    for sample_type in ["hom", "het"]
+})
 
-# Add order-specific counts
-species_ht = species_ht.annotate(
-    **{
-        f"{order}_hom": count_by_order(hl.array(hl.set(species_ht.hom_samples)), order) for order in orders
-    }, **{
-        f"{order}_het": count_by_order(hl.array(hl.set(species_ht.het_samples)), order) for order in orders
-    }
-)
-
-species_ht = species_ht.checkpoint(f'{args.tmpdir}/{args.species}_data1_2.ht', overwrite=True)
+species_ht = species_ht.checkpoint(f'{args.tmpdir}/{args.species}_data1_cpt4.ht', overwrite=True)
 
 species_ht = species_ht.key_by('species_locus')
 
@@ -227,7 +244,7 @@ non_call_columns = [
     'species_locus', 'species_alleles', 'transcript_mappings', 'species', 'family', 'order', 'reference', 'AN', 'AC', 
     'AF', 'n_hom', 'n_het', 'samples', 'hom_samples', 'het_samples', 'ref_match', 'min_hamming', 'pentamer_error', 
     'species_pentamer', 'reciprocal_mapping', 'human2species_mappings', 'overlapping_annotations', 'strand_v_human_ref'
-    ] + [f"{order}_hom" for order in orders] + [f"{order}_het" for order in orders]
+    ] + [f"{order}_{sample_type}" for order in orders for sample_type in ["hom", "het"]]
 
 species_ht = species_ht.annotate(
     species_data = hl.struct(

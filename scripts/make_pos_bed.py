@@ -8,7 +8,9 @@ import os
 def process_bed_file(input_file, outdir):
 
     # Read the BED file
-    bed_data = pl.read_csv(input_file, separator='\t')
+    bed_data = pl.read_csv(input_file, separator='\t', has_header=False)
+
+    bed_data.columns = ['hg38_chr', 'start', 'end', 'strand', 'region']
 
     # Create the 'hg38_position' range and drop 'start' and 'end'
     bed_data = bed_data.with_columns(
@@ -41,10 +43,14 @@ def process_bed_file(input_file, outdir):
 
     print(f"Processed data saved to {output_file}")
 
+
 def main():
 
     # Argument parser for input file
-    parser = argparse.ArgumentParser(description="Process a BED file and generate a Parquet file by positions.")
+    parser = argparse.ArgumentParser(
+        description="Process a BED file and generate a Parquet \
+            file by positions."
+        )
     parser.add_argument("input_file", help="Path to the input BED file")
     parser.add_argument("outdir", help="Path to output directory")
     # Parse arguments
@@ -52,6 +58,7 @@ def main():
 
     # Process the BED file
     process_bed_file(args.input_file, args.outdir)
+
 
 if __name__ == "__main__":
     main()

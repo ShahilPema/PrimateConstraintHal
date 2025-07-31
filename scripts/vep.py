@@ -1,16 +1,11 @@
 import hail as hl
-from pyspark.sql import SparkSession
-import os
 import argparse
-import psutil
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Process a VCF file with Hail.")
 parser.add_argument("--cpus", required=True, help="Total cpus on machine")
 parser.add_argument("--memory", required=True, help="Total memory on machine")
-parser.add_argument("--position_table", required=True, help="Path to table of positions to be annotated with VEP.")
-parser.add_argument("--human_fasta_path", required=True, help="Path to the FASTA file for the primate genome.")
-parser.add_argument("--human_index_path", required=True, help="Path to the FASTA index file (.fai).")
+parser.add_argument("--regionsxvar_table", required=True, help="Path to table of positions to be annotated with VEP.")
 parser.add_argument("--vep_config", required=True, help="Config file for VEP.")
 parser.add_argument("--tmpdir", required=True, help="Temporary directory")
 parser.add_argument("--output", required=True, help="Output directory")
@@ -26,48 +21,23 @@ config = {
 
 hl.init(spark_conf=config, master=f'local[{args.cpus}]', tmp_dir=args.tmpdir, local_tmpdir=args.tmpdir)
 
-rg = hl.ReferenceGenome.from_fasta_file(
-    name='Homo_sapiens',
-    fasta_file=args.human_fasta_path,
-    index_file=args.human_index_path
-)
+bed_ht = hl.read_table(args.regionsxvar_table)
+vep_annotate = bed_ht.filter(bed_ht.regions.contains('-CDS'))
+vep_annotate = vep_annotate.checkpoint('cpt1.ht', overwrite=True)
 
-spark = SparkSession.builder.appName("ParquetReader").getOrCreate()
-
-bed_data = spark.read.parquet(args.position_table)
-bed_ht = hl.Table.from_spark(bed_data)
-bed_ht = bed_ht.repartition(int(args.cpus))
-bed_ht = bed_ht.annotate(variant_str = bed_ht.hg38_chr + ":" + hl.str(bed_ht.hg38_position))
-bed_ht = bed_ht.annotate(locus = hl.parse_locus(bed_ht.variant_str,reference_genome='Homo_sapiens'))
-bed_ht = bed_ht.annotate(
-    ref=bed_ht.locus.sequence_context().upper()
-)
-bed_ht = bed_ht.annotate(
-    possible_alts=hl.if_else(
-        bed_ht.ref != "N",
-        hl.set(['A', 'T', 'C', 'G']).remove(bed_ht.ref),
-        hl.set(['N'])
+if vep_annotate.count() > 0:
+    vep_annotate = hl.vep(vep_annotate, args.vep_config)
+    vep_annotate = vep_annotate.checkpoint('cpt2.ht', overwrite=True)
+    bed_ht = bed_ht.annotate(
+        vep = vep_annotate[bed_ht.key]
     )
-)
-bed_ht = bed_ht.explode('possible_alts')
-bed_ht = bed_ht.annotate(
-    alleles=hl.array([bed_ht.ref, bed_ht.possible_alts])
-)
-
-bed_ht = bed_ht.key_by(bed_ht.locus, bed_ht.alleles)
-
-bed_ht = bed_ht.select(
-    hg38_chr = bed_ht.hg38_chr,
-    hg38_position = hl.int32(bed_ht.hg38_position),
-    REF = bed_ht.ref,
-    ALT = bed_ht.possible_alts,
-    regions = bed_ht.region
-)
-
-bed_ht = bed_ht.repartition(int(args.cpus))
-bed_ht = bed_ht.checkpoint(f'{args.output}/regionsxvar.ht', overwrite=True)
-bed_ht = hl.vep(bed_ht, args.vep_config)
-bed_ht.write(f'{args.output}/vep.ht', overwrite=True)
+    bed_ht.write(f'{args.output}/vep.ht', overwrite=True)
+else:
+    vep_col = 'struct{input: str, id: str, end: int32, transcript_consequences: array<struct{allele_num: int32, cdna_end: int32, cdna_start: int32, gene_id: str, protein_end: int32, protein_start: int32, variant_allele: str, codons: str, consequence_terms: array<str>, strand: int32, transcript_id: str, impact: str, cds_start: int32, cds_end: int32, amino_acids: str, flags: array<str>, distance: int32, lof: str, lof_flags: str, lof_filter: str, lof_info: str, spliceregion: array<str>, tssdistance: int32}>, intergenic_consequences: array<struct{allele_num: int32, variant_allele: str, consequence_terms: array<str>, impact: str}>, motif_feature_consequences: array<struct{allele_num: int32, cdna_end: int32, cdna_start: int32, gene_id: str, protein_end: int32, protein_start: int32, variant_allele: str, codons: str, consequence_terms: array<str>, strand: int32, transcript_id: str, impact: str, cds_start: int32, cds_end: int32, amino_acids: str, flags: array<str>}>, regulatory_feature_consequences: array<struct{allele_num: int32, cdna_end: int32, cdna_start: int32, gene_id: str, protein_end: int32, protein_start: int32, variant_allele: str, codons: str, consequence_terms: array<str>, strand: int32, transcript_id: str, impact: str, cds_start: int32, cds_end: int32, amino_acids: str, flags: array<str>, biotype: str, regulatory_feature_id: str}>, assembly_name: str, seq_region_name: str, most_severe_consequence: str, start: int32, allele_string: str, strand: int32}'
+    vep_annotate = vep_annotate.annotate(
+        vep = hl.missing(vep_col)
+    )
+    vep_annotate.write(f'{args.output}/vep.ht', overwrite=True)
 
 ##NOTE
 ##Some positions are missing in the vep_annotated parquet because the mane select transcript was not included in the output. This behavior is replicated

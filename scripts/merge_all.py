@@ -2,7 +2,7 @@ import hail as hl
 import argparse
 
 parser = argparse.ArgumentParser(description="Aggregate counts across all references.")
-parser.add_argument("--vep", required=True, help="VEP hail table, containing all sites")
+parser.add_argument("--regionsxvar", required=True, help="RegionsXVar Hail table, containing all sites")
 parser.add_argument("--human_fa", required=True, help="Human reference fasta file")
 parser.add_argument("--human_faidx", required=True, help="Human reference fasta index file")
 parser.add_argument("--var_hts", required=True, help="List of aggregated varaiant-level matrix tables for each reference species")
@@ -23,8 +23,7 @@ config = {
 hl.init(spark_conf=config, master=f'local[{args.cpus}]', tmp_dir=args.tmpdir, local_tmpdir=args.tmpdir)
 
 
-all_positions = hl.read_table(args.vep)
-all_positions = all_positions.select('regions')
+all_positions = hl.read_table(args.regionsxvar)
 
 var_level_files = args.var_hts.split()
 

@@ -26,6 +26,7 @@ From: quay.io/comparative-genomics-toolkit/cactus:v2.9.3
         libopenblas-dev \
         tabix \
         jq \
+        unzip \
         && apt-get clean
 
     # Install Miniconda
@@ -56,6 +57,10 @@ From: quay.io/comparative-genomics-toolkit/cactus:v2.9.3
     mv /tmp/bin/bedops-typical /bin/bedops
     rm -rf /tmp/bin
     rm -f /tmp/bedops_linux_x86_64-v2.4.41.tar.bz2
+
+    # Install UCSC util
+    wget https://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/bigWigToBedGraph -O /bin/bigWigToBedGraph
+    chmod +x /bin/bigWigToBedGraph
 
     # Install required Python packages
     pip3 install --no-cache-dir \

@@ -7,10 +7,13 @@ vcfs/
 vep/
 work/
 .nextflow/
+merged_vars/
+scripts/tmp/
 
 # Ignore Hail log files specifically if they appear outside the logs/ directory
 *.log
 *.sif
+*.ipynb
 .nextflow.log*
 447-mammalian-2022v1.hal
 

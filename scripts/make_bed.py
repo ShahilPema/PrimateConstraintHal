@@ -452,7 +452,7 @@ def main(gff_path, regulatory_gff_path, output_path):
     ).sort(['hg38_chr', 'start', 'end'])
    
     # Write output files
-    processed_dataframe.write_csv(output_path, separator='\t')
+    processed_dataframe.write_csv(output_path, separator='\t', include_header=False)
     
     # Count and display region types
     region_counts = count_region_types(processed_dataframe)

@@ -121,41 +121,12 @@ vep = vep.annotate(
 
 vep = vep.checkpoint('B.ht', overwrite=True)
 
-"""
-vep = vep.key_by('protein_start', 'transcript')
-
-vep = vep.checkpoint('C.ht', overwrite=True)
-
-
-
-vep_contiguous = vep.filter(vep.region_type == 'CDS')
-
-vep_contiguous = vep_contiguous.group_by(
-    'protein_start', 'transcript'
-).aggregate(
-    max_pos = hl.agg.max(vep_contiguous.hg38_position),
-    min_pos = hl.agg.min(vep_contiguous.hg38_position)
-)
-
-vep_contiguous = vep_contiguous.annotate(
-    contiguous = (vep_contiguous.max_pos - vep_contiguous.min_pos) < 3
-    ).drop('max_pos', 'min_pos')
-
-vep_contiguous = vep_contiguous.distinct()
-
-vep_contiguous = vep_contiguous.checkpoint('D.ht', overwrite=True)
-
-vep = vep.annotate(contiguous = vep_contiguous[vep.key].contiguous)
-"""
-
-vep = vep.checkpoint('E.ht', overwrite=True)
-
 vep = vep.key_by('hg38_chr', 'hg38_position', 'transcript', 'region_type')
 
 vep = vep.distinct()
 
 vep.write(f'{args.output}/vep_cdsinfo.ht', overwrite=True)
 
-for file in ['A.ht', 'B.ht', 'C.ht', 'D.ht', 'E.ht']:
+for file in ['A.ht', 'B.ht']:
     if os.path.exists(file):
         shutil.rmtree(file)
